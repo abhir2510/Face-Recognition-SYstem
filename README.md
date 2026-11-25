@@ -16,8 +16,8 @@ A small, local facial recognition project built around the pipeline requested in
 |---|---|---|
 | Language | Python 3.10+ | Main application logic |
 | Video and UI | OpenCV | Webcam frames, colour conversion, drawing windows |
-| Face detection | MTCNN | Finds face bounding boxes and five landmark points |
-| Deep learning | TensorFlow + Keras-FaceNet | Generates a normalized 128-dimensional FaceNet embedding |
+| Face detection & liveness | MediaPipe FaceLandmarker (or MTCNN) | Fast CPU face detection and 478 landmarks for blink/head-turn liveness |
+| Deep learning | TensorFlow + Keras-FaceNet | Generates a normalized 512-dimensional FaceNet embedding |
 | Recognition | NumPy cosine similarity | Matches the embedding to enrolled identities |
 | Optional evaluation | scikit-learn | Precision, recall, F1-score, confusion matrix |
 
@@ -40,32 +40,34 @@ Run the commands from this project folder.
 Enroll each consenting participant (collect 20-40 samples with slight head/lighting changes):
 
 ```bash
-python enroll.py --name Abhishek --samples 30
-python enroll.py --name Aditya --samples 30
+python enroll.py --name Abhishek --samples 30 --auto
+python enroll.py --name Aditya --samples 30 --auto
 ```
 
-Then launch recognition:
+Then launch recognition (with active blink + head-turn liveness):
 
 ```bash
 python recognize.py
+# Useful flags: --no-liveness, --liveness-steps 1, --detector mtcnn
 ```
 
-Controls: `q` quits; `c` captures a usable enrollment sample. The model weights may download on their first run, so keep an internet connection available for that initial setup.
+Controls: `q` quits; `r` resets the liveness challenge; `c` captures a manual enrollment sample (or pass `--auto`). Model weights and `models/face_landmarker.task` download automatically on first run if missing.
 
 ## How it works - explanation for a viva
 
-"The webcam gives us frames through OpenCV. MTCNN first locates each face and its landmark points, so background pixels are not treated as a face. The detected face is resized to 160 by 160 pixels and sent to FaceNet. FaceNet converts the image into 128 numbers called an embedding. Faces of the same person have embeddings close together; different people are farther apart. During enrollment, we average multiple embeddings for each name. During recognition, we calculate cosine similarity between the live embedding and every saved average. If the best similarity passes a threshold, we display that name; otherwise we say Unknown."
+"The webcam gives us frames through OpenCV. MediaPipe FaceLandmarker locates each face and 478 facial landmarks quickly on CPU. Before matching, an active liveness challenge checks Eye Aspect Ratio (EAR) for real eye blinks and nose-to-cheek landmark ratio for a slight head turn so a static photo cannot pass. Once live, the cropped face is resized to 160 by 160 pixels and sent to FaceNet, which converts it into a normalized 512-dimensional embedding. During enrollment, we average multiple embeddings for each name. During recognition, we run FaceNet at a frame interval and compare the live embedding against every saved average using cosine similarity. If the best similarity passes a threshold, we display that name; otherwise we say Unknown."
 
 ### Pipeline
 
 ```text
 Webcam frame
-   -> MTCNN face detection + landmarks
+   -> MediaPipe FaceLandmarker (face box + 478 landmarks)
+   -> active liveness check (EAR blink + head turn)
    -> crop / resize to 160 x 160
    -> FaceNet deep CNN
-   -> 128-D normalized embedding
+   -> 512-D normalized embedding
    -> cosine similarity against enrolled embeddings
-   -> known identity or Unknown
+   -> known identity [LIVE] or Unknown
 ```
 
 ### Why deep learning is used
